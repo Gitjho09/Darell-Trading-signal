@@ -135,8 +135,7 @@ with tab1:
                     st.session_state['screenshots'] = []
                 st.session_state['screenshots'].append({"pair": pair_for_analysis, "price": price, "time": datetime.now().strftime("%Y-%m-%d %H:%M")})
                 st.balloons()
-    
-    if st.session_state.get('screenshots'):
+        if st.session_state.get('screenshots'):
         st.markdown("#### 📁 Saved Screenshots")
         for s in st.session_state['screenshots'][-3:]:
             st.info(f"{s['pair']} - ${s['price']:,.2f} - {s['time']}")
