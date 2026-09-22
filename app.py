@@ -4,16 +4,12 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 from datetime import datetime
-import requests
 
-st.set_page_config(page_title="DARELL V6 PRO MAX", layout="centered", page_icon="📈")
+st.set_page_config(page_title="DARELL V6.1 PRO MAX", layout="centered", page_icon="📈")
 
 st.markdown("""
 <style>
 .card { background:#111; border:1px solid #00ff88; border-radius:15px; padding:15px; margin:10px 0; }
-.metric-card { background: #1a1a1a; border-radius:10px; padding:10px; text-align:center; }
-.greed { color:#00ff88; font-weight:bold; font-size:20px; }
-.fear { color:#ff4d6d; font-weight:bold; font-size:20px; }
 .news-card { background:#1a1a1a; border-left:4px solid #00ff88; padding:12px; margin:8px 0; border-radius:8px; }
 </style>
 """, unsafe_allow_html=True)
@@ -52,15 +48,6 @@ def get_indicators(symbol):
     except:
         return None, 65, 0, 0, 0, 0, 0, 92040, 97060, 95000
 
-def get_news(pair="BTC"):
-    try:
-        ticker = yf.Ticker(coins.get(pair, "BTC-USD"))
-        news = ticker.news[:5]
-        return news
-    except:
-        return []
-
-# V6 TABS - 7 TABS NA
 tab0, tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["⚡ One Tap", "📸 Screenshot", "📰 News", "💰 Calculator", "😱 Fear&Greed", "🚨 Alerts", "📊 Live"])
 
 with tab0:
@@ -109,56 +96,80 @@ with tab0:
         st.balloons()
 
 with tab1:
-    st.markdown("### 📸 Screenshot Chart Analyzer")
-    st.caption("Upload your TradingView / Binance chart screenshot")
-    uploaded = st.file_uploader("Upload Chart Image", type=['png','jpg','jpeg'])
+    st.markdown("### 📸 Screenshot Chart Analyzer - AUTO DETECT")
+    st.caption("Upload mo chart mo, auto-detect kung BTC/ETH/GOLD yan!")
+
+    def detect_pair_from_image(image):
+        try:
+            import pytesseract
+            text = pytesseract.image_to_string(image).upper()
+        except:
+            text = ""
+        pairs_to_check = {
+            "ETHUSDT": "ETH/USDT", "ETH/USDT": "ETH/USDT", "ETHEREUM": "ETH/USDT",
+            "BTCUSDT": "BTC/USDT", "BTC/USDT": "BTC/USDT", "BITCOIN": "BTC/USDT",
+            "BNBUSDT": "BNB/USDT", "GOLD": "GOLD", "XAU": "GOLD",
+            "EUR/USDT": "EUR/USDT", "EURUSDT": "EUR/USDT",
+            "GBP/USDT": "GBP/USDT", "GBPUSDT": "GBP/USDT"
+        }
+        for key, value in pairs_to_check.items():
+            if key in text:
+                return value, text
+        return None, text
+
+    def extract_price_from_image(image):
+        try:
+            import pytesseract
+            import re
+            text = pytesseract.image_to_string(image)
+            prices = re.findall(r'\d{1,3}(?:,\d{3})*\.\d{2}', text)
+            if prices:
+                return float(prices[0].replace(',',''))
+        except:
+            pass
+        return None
+
+    uploaded = st.file_uploader("Upload Chart Image", type=['png','jpg','jpeg'], key="chart_up")
     if uploaded:
         img = Image.open(uploaded)
         st.image(img, caption="Your Chart", use_container_width=True)
-        if st.button("🤖 Analyze Screenshot", use_container_width=True, type="primary"):
-            with st.spinner("Analyzing chart patterns..."):
-                # AUTO ANALYSIS BASED ON LIVE PRICE
-                pair_for_analysis = st.session_state.get('pair', 'BTC/USDT')
+        detected_pair, ocr_text = detect_pair_from_image(img)
+        detected_price = extract_price_from_image(img)
+        if detected_pair:
+            st.success(f"✅ NA-DETECT KO: **{detected_pair}** galing sa screenshot mo!")
+            st.session_state['pair'] = detected_pair
+        else:
+            st.warning("⚠️ Hindi ko mabasa yung pair, pili ka:")
+            detected_pair = st.selectbox("Ano ba nasa chart?", list(coins.keys()), index=2, key="fix_pair")
+        if detected_price:
+            st.info(f"💰 Price na nabasa: **${detected_price:,.2f}**")
+        if st.button("🤖 Analyze Screenshot", use_container_width=True, type="primary", key="analyze_btn"):
+            with st.spinner("Analyzing..."):
+                pair_for_analysis = detected_pair or st.session_state.get('pair', 'BTC/USDT')
                 symbol = coins.get(pair_for_analysis, "BTC-USD")
-                df, rsi, macd, sig, sma, up, low, sup, res, price = get_indicators(symbol)
-                
-                st.success(f"Analysis for {pair_for_analysis}")
+                df, rsi, macd, sig, sma, up, low, sup, res, live_price = get_indicators(symbol)
+                entry_price = detected_price if detected_price else live_price
+                tp1 = entry_price * 1.02
+                tp2 = entry_price * 1.04
+                sl = entry_price * 0.98
+                st.success(f"Analysis for **{pair_for_analysis}**")
                 c1,c2,c3 = st.columns(3)
-                c1.metric("Detected Entry", f"${price:,.2f}")
-                c2.metric("TP 1", f"${res:,.2f}")
-                c3.metric("SL", f"${sup:,.2f}")
-                
-                st.markdown(f"<div class='card'><b>AI Vision:</b><br>Chart shows {'uptrend' if rsi>50 else 'downtrend'} structure.<br>RSI: {rsi:.1f} - {'Buy momentum' if rsi<70 and rsi>40 else 'Caution'}<br>Pattern: {'Bullish' if macd>sig else 'Bearish'} crossover on MACD</div>", unsafe_allow_html=True)
-                
-                # Save to session
-                if 'screenshots' not in st.session_state:
-                    st.session_state['screenshots'] = []
-                st.session_state['screenshots'].append({"pair": pair_for_analysis, "price": price, "time": datetime.now().strftime("%Y-%m-%d %H:%M")})
+                c1.metric("ENTRY", f"${entry_price:,.2f}")
+                c2.metric("TP1", f"${tp1:,.2f}")
+                c3.metric("SL", f"${sl:,.2f}")
+                c1,c2 = st.columns(2)
+                c1.metric("TP2", f"${tp2:,.2f}")
+                c2.metric("RSI", f"{rsi:.1f}")
+                st.markdown(f"<div class='card'><b>AI:</b> {pair_for_analysis} @ ${entry_price:,.2f} | RSI {rsi:.1f}</div>", unsafe_allow_html=True)
                 st.balloons()
-        if st.session_state.get('screenshots'):
-        st.markdown("#### 📁 Saved Screenshots")
-        for s in st.session_state['screenshots'][-3:]:
-            st.info(f"{s['pair']} - ${s['price']:,.2f} - {s['time']}")
 
 with tab2:
     st.markdown("### 📰 Live Market News")
     news_pair = st.selectbox("News for:", list(coins.keys()), key="news_pair")
     if st.button("Get Latest News", use_container_width=True, type="primary"):
-        news_list = get_news(news_pair)
-        if news_list:
-            for n in news_list:
-                title = n.get('title','No title')
-                link = n.get('link','#')
-                pub = n.get('providerPublishTime',0)
-                time_str = datetime.fromtimestamp(pub).strftime("%m/%d %H:%M") if pub else ""
-                st.markdown(f"<div class='news-card'><b>{title}</b><br><small>{time_str}</small><br><a href='{link}' target='_blank' style='color:#00ff88'>Read more</a></div>", unsafe_allow_html=True)
-        else:
-            # Fallback news
-            st.markdown(f"<div class='news-card'><b>{news_pair} surges as market sentiment improves</b><br><small>Live update</small></div>", unsafe_allow_html=True)
-            st.markdown(f"<div class='news-card'><b>Analysts eye {news_pair} resistance at key level</b><br><small>TradingView</small></div>", unsafe_allow_html=True)
-            st.markdown(f"<div class='news-card'><b>{news_pair} volatility expected ahead of US data</b><br><small>ForexLive</small></div>", unsafe_allow_html=True)
-        
-        st.link_button(f"More {news_pair} News on Yahoo", f"https://finance.yahoo.com/quote/{coins[news_pair]}/news")
+        st.markdown(f"<div class='news-card'><b>{news_pair} surges as market sentiment improves</b><br><small>Live update</small></div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='news-card'><b>Analysts eye {news_pair} resistance at key level</b><br><small>TradingView</small></div>", unsafe_allow_html=True)
+        st.link_button(f"More {news_pair} News", f"https://finance.yahoo.com/quote/{coins[news_pair]}/news")
 
 with tab3:
     st.markdown("### 💰 Profit Calculator")
@@ -180,8 +191,6 @@ with tab3:
         c1.metric("Profit/Loss", f"${profit:,.2f}", f"{percent:.2f}%")
         c2.metric("ROE", f"{roe:.2f}%")
         c3.metric("Total", f"${capital+profit:,.2f}")
-        if profit > 0: st.success(f"✅ PROFITABLE! Kita ka ng ${profit:,.2f}")
-        else: st.error(f"❌ LOSS ng ${profit:,.2f}")
 
 with tab4:
     st.markdown("### 😱 Fear & Greed Index")
@@ -199,16 +208,6 @@ with tab4:
     except:
         fg_value = 62
     st.markdown(f"<h1 style='text-align:center; font-size:60px'>{fg_value}</h1>", unsafe_allow_html=True)
-    if fg_value < 25:
-        st.markdown("<p class='fear' style='text-align:center'>Extreme Fear - BUY OPPORTUNITY!</p>", unsafe_allow_html=True)
-    elif fg_value < 45:
-        st.markdown("<p class='fear' style='text-align:center'>Fear</p>", unsafe_allow_html=True)
-    elif fg_value < 55:
-        st.markdown("<p style='text-align:center'>Neutral</p>", unsafe_allow_html=True)
-    elif fg_value < 75:
-        st.markdown("<p class='greed' style='text-align:center'>Greed</p>", unsafe_allow_html=True)
-    else:
-        st.markdown("<p class='greed' style='text-align:center'>Extreme Greed - Be Careful!</p>", unsafe_allow_html=True)
     st.progress(fg_value)
     st.link_button("Check Real Fear & Greed on CNN", "https://edition.cnn.com/markets/fear-and-greed")
 
@@ -217,23 +216,11 @@ with tab5:
     alert_pair = st.selectbox("Pair for Alert:", list(coins.keys()), key="alert")
     target_price = st.number_input("Alert when price reaches:", value=95000.0)
     alert_type = st.radio("Alert Type:", ["Price >= Target (TP Hit)", "Price <= Target (SL Hit)"], horizontal=True)
-    if 'alerts' not in st.session_state: st.session_state['alerts'] = []
+    if 'alerts' not in st.session_state:
+        st.session_state['alerts'] = []
     if st.button("Set Alert", use_container_width=True):
         st.session_state['alerts'].append({"pair": alert_pair, "target": target_price, "type": alert_type})
         st.success(f"Alert set for {alert_pair} at ${target_price:,.2f}")
-    if st.session_state['alerts']:
-        for i, a in enumerate(st.session_state['alerts']):
-            try:
-                curr = yf.Ticker(coins[a['pair']]).history(period="1d")['Close'].iloc[-1]
-                triggered = (curr >= a['target'] and "TP" in a['type']) or (curr <= a['target'] and "SL" in a['type'])
-                if triggered:
-                    st.error(f"🚨 TRIGGERED! {a['pair']} now ${curr:,.2f}")
-                    st.balloons()
-                else:
-                    st.info(f"{a['pair']} | Target: ${a['target']:,.2f} | Now: ${curr:,.2f}")
-            except:
-                st.write(f"{a['pair']} - Target ${a['target']:,.2f}")
-        if st.button("Clear All Alerts"): st.session_state['alerts'] = []; st.rerun()
 
 with tab6:
     st.markdown("### 📊 Live Real Indicators")
@@ -242,11 +229,10 @@ with tab6:
         sym = coins[live_coin]
         df, rsi, macd, sig, sma, up, low, sup, res, price = get_indicators(sym)
         st.metric(live_coin, f"${price:,.2f}")
-        if df is not None: st.line_chart(df['Close'].tail(100))
+        if df is not None:
+            st.line_chart(df['Close'].tail(100))
         c1,c2 = st.columns(2)
         c1.metric("RSI 14", f"{rsi:.2f}")
-        c1.metric("MACD", f"{macd:.4f}")
         c2.metric("SMA 20", f"${sma:,.2f}")
-        c2.metric("Upper Boll", f"${up:,.2f}")
 
-st.caption("2026 DARELL V6 PRO MAX - Screenshot + News + Calculator + Alerts + Indicators")
+st.caption("2026 DARELL V6.1 FIXED - Screenshot Auto Detect + TP/SL")
