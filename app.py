@@ -26,7 +26,7 @@
                 c1.metric("TP2", f"${tp2:,.2f}")
                 c2.metric("RSI", f"{rsi:.1f}")
                 st.markdown(f"<div class='card'><b>AI:</b> {pair_for_analysis} @ ${entry_price:,.2f} | RSI {rsi:.1f}</div>", unsafe_allow_html=True)
-                st.balloons()
+                st.fireworks()
 
 with tab2:
     st.markdown("### 📰 Live Market News")
